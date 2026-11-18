@@ -21,6 +21,16 @@ inputs:
     description: 'Comma-separated list of LXD bridges to allow through the firewall'
     required: false
     type: string
+  attempts:
+    default: '5'
+    description: 'How many times to try installing or refreshing the LXD snap'
+    required: false
+    type: string
+  retry-delay:
+    default: '15'
+    description: 'Seconds to wait before the first retry; it doubles after each one, up to 60 or this value, whichever is larger'
+    required: false
+    type: string
 
 runs:
   using: "composite"
@@ -28,13 +38,32 @@ runs:
 
     - name: Install/refresh LXD snap
       shell: bash
+      env:
+        INPUT_CHANNEL: ${{ inputs.channel }}
+        INPUT_ATTEMPTS: ${{ inputs.attempts }}
+        INPUT_RETRY_DELAY: ${{ inputs.retry-delay }}
+      # The Snap Store times out or drops connections often enough to fail CI, so retry with backoff.
       run: |
         set -x
         if snap list lxd; then
-          sudo snap refresh lxd --channel=${{ inputs.channel }}
+          action=refresh
         else
-          sudo snap install lxd --channel=${{ inputs.channel }}
+          action=install
         fi
+        delay="${INPUT_RETRY_DELAY}"
+        max_delay=$(( delay > 60 ? delay : 60 ))
+        for attempt in $(seq 1 "${INPUT_ATTEMPTS}"); do
+          if sudo snap "${action}" lxd --channel="${INPUT_CHANNEL}"; then
+            exit 0
+          fi
+          if [ "${attempt}" -lt "${INPUT_ATTEMPTS}" ]; then
+            echo "snap ${action} lxd failed (attempt ${attempt} of ${INPUT_ATTEMPTS}), retrying in ${delay}s"
+            sleep "${delay}"
+            delay=$(( delay * 2 > max_delay ? max_delay : delay * 2 ))
+          fi
+        done
+        echo "::error::snap ${action} lxd failed after ${INPUT_ATTEMPTS} attempts"
+        exit 1
 
     - name: Set up permissions for socket
       shell: bash

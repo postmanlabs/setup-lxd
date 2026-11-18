@@ -27,6 +27,16 @@ with:
 ```
 and then this action will install/refresh LXD from the specified channel.
 
+The snap install or refresh is retried with backoff, because the Snap Store
+times out often enough to fail CI. Tune it with `attempts` (5 by default) and
+`retry-delay` (15 seconds before the first retry, doubling up to 60):
+```yaml
+uses: canonical/setup-lxd@main
+with:
+  attempts: 3
+  retry-delay: 10
+```
+
 If you require more control over LXD's initalisation, you can also specify the
 preseed input:
 ```yaml
